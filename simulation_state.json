@@ -1,0 +1,308 @@
+{
+    "width": 800,
+    "height": 600,
+    "gravity": {
+        "__class__": "Vec2",
+        "x": 0,
+        "y": 981
+    },
+    "particles": [
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 422,
+                "y": 86
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 422.0000000000002,
+                "y": 86.00000000000006
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 0,
+                "y": 0
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": true
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 149.79925458247493,
+                "y": 91.88686342833594
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 149.79925458247504,
+                "y": 91.886863428336
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 0,
+                "y": 0
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": true
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 216.3978849030211,
+                "y": 172.6999752482538
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 216.39788490302115,
+                "y": 172.6999752482538
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 4.82458517581108e-11,
+                "y": -980.9999999999723
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 361.1686679470602,
+                "y": 170.44423013624424
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 361.1722405262771,
+                "y": 170.44449750036586
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 141.4741369881898,
+                "y": -970.412380783928
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 242.56322191538882,
+                "y": 282.8852207280192
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 242.5624408540147,
+                "y": 282.885409915403
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": -30.930030414892173,
+                "y": -973.5081796026128
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 296.27845317343525,
+                "y": 269.8910996227991
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 296.28184630674576,
+                "y": 269.88951651198516
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 134.36807909543495,
+                "y": -1043.691188233482
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 282.071809199938,
+                "y": 192.35181026756658
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 282.06549173284526,
+                "y": 192.35117774601176
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": -250.17169687300606,
+                "y": -1006.0478535707219
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        },
+        {
+            "__class__": "Particle",
+            "pos": {
+                "__class__": "Vec2",
+                "x": 358.2902780364058,
+                "y": 275.17785534798963
+            },
+            "old_pos": {
+                "__class__": "Vec2",
+                "x": 358.2904108523453,
+                "y": 275.17961442885303
+            },
+            "acceleration": {
+                "__class__": "Vec2",
+                "x": 5.259511204394737,
+                "y": -911.3403978091316
+            },
+            "radius": 10,
+            "mass": 1.0,
+            "fixed": false
+        }
+    ],
+    "constraints": [
+        {
+            "__class__": "Spring",
+            "p1_idx": 1,
+            "p2_idx": 2,
+            "length": 81.00588315384945,
+            "stiffness": 50.0
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 2,
+            "p2_idx": 6,
+            "length": 56.08029957123981,
+            "stiffness": 50.0
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 2,
+            "p2_idx": 4,
+            "length": 97.52948272189288,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 2,
+            "p2_idx": 5,
+            "length": 119.09659944767525,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 3,
+            "p2_idx": 6,
+            "length": 71.11258679024411,
+            "stiffness": 50.0
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 3,
+            "p2_idx": 5,
+            "length": 103.3537614216338,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 3,
+            "p2_idx": 7,
+            "length": 88.81441324469807,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 0,
+            "p2_idx": 3,
+            "length": 78.26237921249263,
+            "stiffness": 50.0
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 7,
+            "p2_idx": 5,
+            "length": 61.07372593840988,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 5,
+            "p2_idx": 4,
+            "length": 52.15361924162119,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 6,
+            "p2_idx": 4,
+            "length": 98.55474328476217,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 6,
+            "p2_idx": 7,
+            "length": 113.76187718920104,
+            "stiffness": 20
+        },
+        {
+            "__class__": "Spring",
+            "p1_idx": 6,
+            "p2_idx": 5,
+            "length": 78.67316949159083,
+            "stiffness": 20
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 4,
+            "p2_idx": 5,
+            "distance": 55.26650372100575
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 6,
+            "p2_idx": 3,
+            "distance": 82.07554122496344
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 6,
+            "p2_idx": 7,
+            "distance": 112.55811449826403
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 5,
+            "p2_idx": 7,
+            "distance": 62.23608836285015
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 3,
+            "p2_idx": 6,
+            "distance": 82.07360357611998
+        },
+        {
+            "__class__": "DistanceConstraint",
+            "p1_idx": 3,
+            "p2_idx": 5,
+            "distance": 118.74518863534242
+        }
+    ]
+}
