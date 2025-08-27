@@ -7,7 +7,6 @@ class Spring:
         self.p2 = p2
         self.length = float(length)
         self.stiffness = float(stiffness)
-        # If None, compute critical damping per-evaluation (recommended)
         self.damping = None
 
     def compute_force(self, p1_pos, p2_pos, p1_vel, p2_vel):
