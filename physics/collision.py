@@ -1,4 +1,4 @@
-from .core import Vec2
+from .Vec2 import Vec2
 
 def detect_particle_collision(p1, p2):
     """
@@ -70,26 +70,11 @@ def resolve_particle_collision(p1, p2,
             p2.pos = Vec2(p2.pos.x + normal.x * correction_mag * share2,
                           p2.pos.y + normal.y * correction_mag * share2)
 
-        # small velocity bias to help prevent immediate re-penetration
-        vel_bias = correction_mag * 0.5
-        if not p1.fixed:
-            p1.vel = Vec2(p1.vel.x - normal.x * vel_bias * (inv_mass1 / inv_mass_sum),
-                          p1.vel.y - normal.y * vel_bias * (inv_mass1 / inv_mass_sum))
-        if not p2.fixed:
-            p2.vel = Vec2(p2.vel.x + normal.x * vel_bias * (inv_mass2 / inv_mass_sum),
-                          p2.vel.y + normal.y * vel_bias * (inv_mass2 / inv_mass_sum))
-
     # Only apply impulse if bodies are approaching (prevents adding energy in separating contacts)
     if vel_along_normal < 0.0:
-        # compute impulse scalar
-        j = -(1.0 + restitution) * vel_along_normal
-        j /= inv_mass_sum
-        # optional clamp to avoid extreme impulses from numerical issues
-        max_j = 10.0  # tune if necessary
-        if j > max_j:
-            j = max_j
-        impulse = Vec2(normal.x * j, normal.y * j)
-        if not p1.fixed:
-            p1.vel = Vec2(p1.vel.x - impulse.x * inv_mass1, p1.vel.y - impulse.y * inv_mass1)
-        if not p2.fixed:
-            p2.vel = Vec2(p2.vel.x + impulse.x * inv_mass2, p2.vel.y + impulse.y * inv_mass2)
+        # In a PBD-style solver, velocity updates are derived from position changes.
+        # The impulse-based velocity change is removed to prevent conflicting updates
+        # and instability. The positional correction above is now solely responsible
+        # for resolving the collision. Bounciness (restitution) is implicitly handled
+        # by the main world's velocity update, though less directly than with impulses.
+        pass

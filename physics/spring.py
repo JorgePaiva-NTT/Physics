@@ -1,13 +1,17 @@
-from .core import Vec2
+from .TwoPointConstraint import TwoPointConstraint
+from .Vec2 import Vec2
 import math
+import pygame
 
-class Spring:
-    def __init__(self, p1, p2, length, stiffness):
-        self.p1 = p1
-        self.p2 = p2
+class Spring(TwoPointConstraint):
+    def __init__(self, p1, p2, length, stiffness, damping=None):
+        super().__init__(p1, p2)
         self.length = float(length)
         self.stiffness = float(stiffness)
-        self.damping = None
+        if damping is not None:
+            self.damping = float(damping)
+        else:
+            self.damping = 2.0 * math.sqrt(stiffness)
 
     def compute_force(self, p1_pos, p2_pos, p1_vel, p2_vel):
         """
@@ -59,7 +63,7 @@ class Spring:
 
         return Vec2(n.x * force_scalar, n.y * force_scalar)
 
-    def update(self, dt=None):
+    def update(self, dt=None, eps=1e-9):
         """
         Backwards-compatible update: evaluate using current particle states and
         apply forces via a compatibility path (no accumulator in RK4 world).
@@ -75,7 +79,11 @@ class Spring:
             self.p2.apply_force(f_on_p2)
         except Exception:
             pass
-
-    def set_particles(self, p1, p2):
-        self.p1 = p1
-        self.p2 = p2
+        
+    def draw(self, screen, color=(0,0,0), secondary_color=(255,0,0)):
+        """Helper to draw the spring."""
+        pygame.draw.line(screen, color,
+                         (int(self.p1.pos.x), int(self.p1.pos.y)),
+                         (int(self.p2.pos.x), int(self.p2.pos.y)), 1)
+        spring_middle_point = (self.p1.pos + self.p2.pos) * 0.5
+        pygame.draw.circle(screen, secondary_color, (int(spring_middle_point.x), int(spring_middle_point.y)), self.p1.radius*0.5, 2)

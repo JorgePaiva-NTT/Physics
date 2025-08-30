@@ -1,30 +1,17 @@
 import pygame
+from pygame import mouse
+from constants import BLACK, EMITTER_COLOR, EMITTER_SIZE, FPS, HEIGHT, WHITE, WIDTH
+from physics.DistanceConstraint import DistanceConstraint
+from physics.Particle import Particle
+from physics.TwoPointConstraint import TwoPointConstraint
 from physics.world import World
-from physics.core import Particle, Vec2
-from physics.constraints import DistanceConstraint, PinConstraint
+from physics.Vec2 import Vec2
 from physics.spring import Spring
 from physics.serialization import save_world, load_world
 from physics.emitter import Emitter
 
 from multiprocessing import Process, Manager
 import gui_controller as gui_ctrl
-
-# --- Constants ---
-WIDTH, HEIGHT = 800, 600
-FPS = 60
-DT = 1.0 / FPS
-
-# --- Colors ---
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-BLUE = (0, 0, 255)
-GREEN = (0, 255, 0)
-YELLOW = (255, 255, 0)
-MAGENTA = (255, 0, 255)
-
-EMITTER_COLOR = (128, 0, 128)  # Purple for emitter
-EMITTER_SIZE = 20
 
 # helper functions (keep existing implementations)
 def get_particle_under_cursor(mx, my, world):
@@ -79,7 +66,7 @@ def main():
     clock = pygame.time.Clock()
 
     # --- Physics World ---
-    world = World(WIDTH, HEIGHT, gravity=Vec2(0, 981), friction=0.1, restitution=0.5)
+    world = World(WIDTH, HEIGHT, gravity=Vec2(0, 981), friction=0.1, restitution=0.5, constraint_iterations=20)
 
     # --- Simulation Setup ---
     setup_simulation(world)
@@ -93,22 +80,8 @@ def main():
     selected_particle = None
     first_particle_for_constraint = None
     first_particle_for_spring = None
-    input_gravity_mode = False
-    input_gravity_text = ''
-    input_mass_mode = False
-    input_mass_text = ''
-    particle_to_change_mass = None
-    input_radius_mode = False
-    input_radius_text = ''
-    particle_to_change_radius = None
-    input_stiffness_mode = False
-    input_stiffness_text = ''
-    spring_to_change_stiffness = None
-    input_length_mode = False
-    input_length_text = ''
-    spring_to_change_length = None
-    global_friction = None
     paused = False
+    cloth_solver = None
 
     font = pygame.font.Font(None, 32)
 
@@ -118,6 +91,7 @@ def main():
     _shared['verlet_rebuild_freq'] = world.verlet_rebuild_freq
     _shared['verlet_skin'] = world.verlet_skin
     _shared['collision_iterations'] = world.collision_iterations
+    _shared['constraint_iterations'] = world.constraint_iterations
     _shared['reset_world'] = False
     _shared['spawn_emitter'] = False
     _shared['selected_constraint'] = None  # to be set by main loop when a constraint is selected
@@ -174,7 +148,7 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
                     # Reset world
-                    world = World(WIDTH, HEIGHT, gravity=Vec2(0, 981), friction=0.1, restitution=0.5)
+                    world = World(WIDTH, HEIGHT, gravity=Vec2(0, 981), friction=0.1, restitution=0.5, constraint_iterations=world.constraint_iterations)
                     emitter = None
                 elif event.key == pygame.K_p:
                     # Save world
@@ -185,6 +159,14 @@ def main():
                     if loaded_world:
                         world = loaded_world
                         emitter = None
+                elif event.key == pygame.K_d:
+                    mx, my = mouse.get_pos()
+                    if first_particle_for_constraint:
+                        other_particle = get_particle_under_cursor(mx, my, world)
+                        world.add_constraint(DistanceConstraint(first_particle_for_constraint, other_particle, (first_particle_for_constraint.pos - other_particle.pos).length()))
+                        first_particle_for_constraint = None
+                    else:
+                        first_particle_for_constraint = get_particle_under_cursor(mx, my, world)
                 elif event.key == pygame.K_f:
                     # set particle fixed
                     if selected_particle:
@@ -204,13 +186,25 @@ def main():
                             selected_particle = None
                 elif event.key == pygame.K_SPACE:
                     paused = not paused
+                elif event.key == pygame.K_c:
+                    cloth_solver = world.create_cloth(
+                        top_left_pos=Vec2(200, 50),
+                        width=400,
+                        height=300,
+                        segments_x=25,
+                        segments_y=20,
+                        tear_factor=0,
+                        pin_corners=['top_left', 'top_right'],
+                        stiffness=1.0 # How much of the error to correct each iteration (0-1)
+                    )
+                    paused = not paused
                 else:
                     pass
 
         # --- Handle GUI updates ---
         try:
             if _shared.get('reset_world', False):
-                world = World(WIDTH, HEIGHT, gravity=Vec2(0, 981), friction=0.1, restitution=0.5)
+                world = World(WIDTH, HEIGHT, gravity=(0, 981), friction=0.1, restitution=0.5, constraint_iterations=world.constraint_iterations)
                 emitter = None
                 _shared['reset_world'] = False
             if _shared.get('spawn_emitter', False):
@@ -223,6 +217,7 @@ def main():
             world.verlet_rebuild_freq = int(_shared.get('verlet_rebuild_freq', world.verlet_rebuild_freq))
             world.verlet_skin = float(_shared.get('verlet_skin', world.verlet_skin))
             world.collision_iterations = int(_shared.get('collision_iterations', world.collision_iterations))
+            world.constraint_iterations = int(_shared.get('constraint_iterations', world.constraint_iterations))
 
             # Apply edits from GUI to the selected constraint (if any)
             sc = _shared.get('selected_constraint')
@@ -294,38 +289,19 @@ def main():
 
         # --- Draw ---
         screen.fill(WHITE)
+                
+        world.draw_particles(screen, selected_particle=selected_particle)
 
-        for p in world.particles:
-            color = RED
-            if p.fixed:
-                color = (125, 125, 125)
-            elif p == selected_particle:
-                color = BLUE
-            elif p == first_particle_for_constraint:
-                color = GREEN
-            elif p == first_particle_for_spring:
-                color = MAGENTA
-            pygame.draw.circle(screen, color, (int(p.pos.x), int(p.pos.y)), p.radius)
-            if p.fixed:
-                pygame.draw.circle(screen, BLACK, (int(p.pos.x), int(p.pos.y)), p.radius*0.5)
-
-        for c in world.constraints:
-            pygame.draw.line(screen, BLACK, 
-                             (int(c.p1.pos.x), int(c.p1.pos.y)), 
-                             (int(c.p2.pos.x), int(c.p2.pos.y)), 2)
-            spring_middle_point = (c.p1.pos + c.p2.pos) * 0.5
-            pygame.draw.circle(screen, RED, (int(spring_middle_point.x), int(spring_middle_point.y)), c.p1.radius*0.5, 2)
+        world.draw_constraints(screen)
+            
+        cloth_solver.draw(screen) if cloth_solver else None
 
         if paused:
             pause_text = font.render("PAUSED", True, BLACK)
             screen.blit(pause_text, (WIDTH - pause_text.get_width() - 10, 10))
 
         if emitter:
-            # Draw emitter
-            pygame.draw.circle(screen, EMITTER_COLOR, (int(emitter.pos.x), int(emitter.pos.y)), EMITTER_SIZE)
-            end_pos = (int(emitter.pos.x + emitter.direction.x * EMITTER_SIZE * 2),
-                    int(emitter.pos.y + emitter.direction.y * EMITTER_SIZE * 2))
-            pygame.draw.line(screen, EMITTER_COLOR, (int(emitter.pos.x), int(emitter.pos.y)), end_pos, 3)
+            emitter.draw(screen)
 
         # draw particle count
         particle_count = len(world.particles)

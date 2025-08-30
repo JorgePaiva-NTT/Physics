@@ -5,25 +5,37 @@ try:
 except Exception:
     _HAVE_NUMPY = False
 
+import pygame
+from physics.solvers.rigidbody import RigidBody
 from physics.spring import Spring
-from .core import Vec2
-from .constraints import TwoPointConstraint
+from physics.solvers.cloth import Cloth
+
+import constants
+from .Particle import Particle
+from .Vec2 import Vec2
+from .TwoPointConstraint import TwoPointConstraint
 from .collision import detect_particle_collision, resolve_particle_collision
 
 
 class World:
-    def __init__(self, width, height, gravity=Vec2(0, 981), friction=0.01, restitution=0.5, cell_size=None):
+    def __init__(self, width, height, gravity=Vec2(0, 981), friction=0.1, restitution=0.5, cell_size=None, constraint_iterations=2):
         self.width = width
         self.height = height
         self.gravity = gravity
         self.friction = friction
         self.restitution = restitution  # Coefficient of restitution for collisions
+        
         self.particles = []
         self.constraints = []
+        self.groups = []
+        self._next_group_id = 1  
+        self._group_map = {} 
+        
         # single pass collision resolution avoids back-and-forth corrections that cause flicker
         # increase this to 3-6 for stable stacking (tunable)
         # default tuned for stacked stability without too many passes
         self.collision_iterations = 4
+        self.constraint_iterations = constraint_iterations
 
         self.bounce = restitution  # use restitution for wall collisions
         
@@ -55,127 +67,201 @@ class World:
             # remove any constraints involving this particle
             self.constraints = [c for c in self.constraints if not (hasattr(c, 'p1') and c.p1 == particle) and not (hasattr(c, 'p2') and c.p2 == particle)]
 
+    def create_group(self, particles, stiffness=1.0, fixed=False):
+        """
+        Create a rigid group from an iterable of Particle objects or indices.
+        Returns a group id.
+        """
+        # convert inputs to indices
+        indices = []
+        for p in particles:
+            if isinstance(p, int):
+                idx = p
+            else:
+                try:
+                    idx = self.particles.index(p)
+                except ValueError:
+                    continue
+            indices.append(idx)
+        if not indices:
+            return None
+
+        # compute rest center and rest_rel
+        rest_com_x = 0.0; rest_com_y = 0.0
+        for i in indices:
+            rest_com_x += self.particles[i].pos.x
+            rest_com_y += self.particles[i].pos.y
+        n = len(indices)
+        rest_com_x /= n; rest_com_y /= n
+        rest_rel = []
+        for i in indices:
+            p = self.particles[i]
+            rest_rel.append(Vec2(p.pos.x - rest_com_x, p.pos.y - rest_com_y))
+
+        group = RigidBody(indices, rest_rel, stiffness=stiffness, fixed=fixed)
+        gid = self._next_group_id
+        self._next_group_id += 1
+        self._group_map[gid] = len(self.groups)
+        self.groups.append(group)
+        return gid
+
+    def create_cloth(self, top_left_pos, width, height, segments_x, segments_y, tear_factor=3.0, pin_corners=None, stiffness=1.0):
+        """
+        Creates a cloth simulation object.
+
+        :param top_left_pos: Vec2 position of the top-left corner.
+        :param width: Total width of the cloth in pixels.
+        :param height: Total height of the cloth in pixels.
+        :param segments_x: Number of horizontal segments.
+        :param segments_y: Number of vertical segments.
+        :param tear_factor: How much a link can stretch before breaking. 0 to disable.
+        :param pin_corners: A list/tuple of corners to pin, e.g., ['top_left', 'top_right'].
+        :param stiffness: The stiffness of the distance constraints (0-1).
+        :return: The group_id of the cloth solver.
+        """
+        
+        num_particles_x = segments_x + 1
+        num_particles_y = segments_y + 1
+        dx = width / segments_x
+        dy = height / segments_y
+
+        particles = []
+        for y in range(num_particles_y):
+            for x in range(num_particles_x):
+                pos = Vec2(top_left_pos.x + x * dx, top_left_pos.y + y * dy)
+                p = Particle(pos, radius=4)
+                particles.append(p)
+
+        # Pinning logic
+        if pin_corners:
+            if 'top_left' in pin_corners: particles[0].fixed = True
+            if 'top_right' in pin_corners: particles[num_particles_x - 1].fixed = True
+            if 'bottom_left' in pin_corners: particles[num_particles_x * (num_particles_y - 1)].fixed = True
+            if 'bottom_right' in pin_corners: particles[-1].fixed = True
+
+        # Add particles to the world and get their indices
+        start_index = len(self.particles)
+        self.particles.extend(particles)
+        indices = list(range(start_index, start_index + len(particles)))
+
+        # Create, build, and add the cloth solver.
+        cloth_solver = Cloth(indices, num_particles_x, num_particles_y, tear_factor, stiffness)
+        cloth_solver.build_constraints(self)
+        self.groups.append(cloth_solver)
+        return cloth_solver # Returning the object itself can be useful
+
+    def remove_group(self, group_id):
+        idx = self._group_map.get(group_id)
+        if idx is None:
+            return
+        self.groups.pop(idx)
+        # rebuild map
+        self._group_map = {gid: i for i, gid in enumerate(self._group_map.keys())}
+
+    def add_particle_to_group(self, group_id, particle):
+        idx = self._group_map.get(group_id)
+        if idx is None:
+            return False
+        group = self.groups[idx]
+        try:
+            pi = self.particles.index(particle)
+        except ValueError:
+            return False
+        if pi in group.indices:
+            return True
+        # append rest_rel using current com as reference (simple)
+        # recompute rest_rel naively: keep existing rest_rel unchanged (user may rebuild)
+        group.indices.append(pi)
+        group.rest_rel.append(Vec2(0.0, 0.0))
+        return True
+
+    def set_group_fixed(self, group_id, fixed=True):
+        idx = self._group_map.get(group_id)
+        if idx is None:
+            return
+        group = self.groups[idx]
+        group.fixed = bool(fixed)
+        for i in group.indices:
+            try:
+                self.particles[i].fixed = bool(fixed)
+            except Exception:
+                pass
+
+    def _solve_groups(self, dt):
+        # Apply each group solver
+        for g in self.groups:
+            try:
+                g.solve(self, dt)
+            except Exception:
+                pass
+
     def update(self, dt):
         """
-        Full-system RK4 integrator.
-        - Forces: gravity, viscous drag (proportional to vel), and springs (force-based).
-        - Positional constraints (PinConstraint, DistanceConstraint) are applied after integration
-          as correction steps (they are assumed to be positional constraints).
-        - Collisions and boundaries are resolved after integration.
+        Updates the world state using a simple and stable Symplectic Euler integrator,
+        followed by position-based constraint and collision resolution. This is a simpler
+        and often faster alternative to RK4 for game physics.
         """
         n = len(self.particles)
         if n == 0:
             return
 
-        # Create index map for quick lookup (use id(p) to avoid mutable-hash issues)
-        index_map = {id(p): i for i, p in enumerate(self.particles)}
+        # Store positions before integration for velocity update later (PBD style)
+        pos_before_integration = [p.pos.copy() for p in self.particles]
 
-        # initial state arrays
-        pos0 = [p.pos.copy() for p in self.particles]
-        vel0 = [p.vel.copy() for p in self.particles]
-        masses = [p.mass for p in self.particles]
-        fixed = [p.fixed for p in self.particles]
+        # --- Integration Step (Symplectic Euler) ---
 
-        def compute_accelerations(positions, velocities):
-            # returns list of Vec2 accelerations
-            forces = [Vec2(0.0, 0.0) for _ in range(n)]
+        # 1. Compute all forces at the current state.
+        forces = [Vec2(0.0, 0.0) for _ in range(n)]
 
-            # external forces: gravity and viscous damping
-            for i in range(n):
-                if fixed[i]:
-                    continue
-                # gravity
-                forces[i] = Vec2(self.gravity.x * masses[i], self.gravity.y * masses[i])
-                # viscous drag proportional to velocity
-                forces[i] = Vec2(forces[i].x - velocities[i].x * self.friction * masses[i],
-                                  forces[i].y - velocities[i].y * self.friction * masses[i])
-
-            # springs (force-based)
-            for c in self.constraints:
-                if isinstance(c, Spring):
-                    i = index_map.get(id(c.p1))
-                    j = index_map.get(id(c.p2))
-                    if i is None or j is None:
-                        # constraint refers to particle not in current world list; skip
-                        continue
-                    f_on_j = c.compute_force(positions[i], positions[j], velocities[i], velocities[j])
-                    # apply force: + on j, - on i
-                    forces[j] = Vec2(forces[j].x + f_on_j.x, forces[j].y + f_on_j.y)
-                    forces[i] = Vec2(forces[i].x - f_on_j.x, forces[i].y - f_on_j.y)
-
-            # accelerations
-            accs = []
-            for i in range(n):
-                if fixed[i]:
-                    accs.append(Vec2(0.0, 0.0))
-                else:
-                    accs.append(Vec2(forces[i].x / masses[i], forces[i].y / masses[i]))
-            return accs
-
-        h = dt
-
-        # k1
-        a1 = compute_accelerations(pos0, vel0)
-        dp1 = [v.copy() for v in vel0]
-        dv1 = [a.copy() for a in a1]
-
-        # k2
-        pos_k2 = [Vec2(pos0[i].x + dp1[i].x * (h * 0.5), pos0[i].y + dp1[i].y * (h * 0.5)) for i in range(n)]
-        vel_k2 = [Vec2(vel0[i].x + dv1[i].x * (h * 0.5), vel0[i].y + dv1[i].y * (h * 0.5)) for i in range(n)]
-        a2 = compute_accelerations(pos_k2, vel_k2)
-        dp2 = [v.copy() for v in vel_k2]
-        dv2 = [a.copy() for a in a2]
-
-        # k3
-        pos_k3 = [Vec2(pos0[i].x + dp2[i].x * (h * 0.5), pos0[i].y + dp2[i].y * (h * 0.5)) for i in range(n)]
-        vel_k3 = [Vec2(vel0[i].x + dv2[i].x * (h * 0.5), vel0[i].y + dv2[i].y * (h * 0.5)) for i in range(n)]
-        a3 = compute_accelerations(pos_k3, vel_k3)
-        dp3 = [v.copy() for v in vel_k3]
-        dv3 = [a.copy() for a in a3]
-
-        # k4
-        pos_k4 = [Vec2(pos0[i].x + dp3[i].x * h, pos0[i].y + dp3[i].y * h) for i in range(n)]
-        vel_k4 = [Vec2(vel0[i].x + dv3[i].x * h, vel0[i].y + dv3[i].y * h) for i in range(n)]
-        a4 = compute_accelerations(pos_k4, vel_k4)
-        dp4 = [v.copy() for v in vel_k4]
-        dv4 = [a.copy() for a in a4]
-
-        # combine to next state
-        pos_next = []
-        vel_next = []
-        for i in range(n):
-            if fixed[i]:
-                pos_next.append(pos0[i].copy())
-                vel_next.append(Vec2(0.0, 0.0))
-                continue
-            px = pos0[i].x + (h / 6.0) * (dp1[i].x + 2.0 * dp2[i].x + 2.0 * dp3[i].x + dp4[i].x)
-            py = pos0[i].y + (h / 6.0) * (dp1[i].y + 2.0 * dp2[i].y + 2.0 * dp3[i].y + dp4[i].y)
-            vx = vel0[i].x + (h / 6.0) * (dv1[i].x + 2.0 * dv2[i].x + 2.0 * dv3[i].x + dv4[i].x)
-            vy = vel0[i].y + (h / 6.0) * (dv1[i].y + 2.0 * dv2[i].y + 2.0 * dv3[i].y + dv4[i].y)
-            pos_next.append(Vec2(px, py))
-            vel_next.append(Vec2(vx, vy))
-
-        # commit new state
+        # Apply global forces (gravity, drag)
         for i, p in enumerate(self.particles):
-            # safety: avoid committing NaN/Inf from integrator — revert to previous state if detected
-            px = pos_next[i].x
-            py = pos_next[i].y
-            vx = vel_next[i].x
-            vy = vel_next[i].y
-            if not (math.isfinite(px) and math.isfinite(py) and math.isfinite(vx) and math.isfinite(vy)):
-                # skip update for this particle (keep previous pos/vel)
-                continue
-            p.pos = pos_next[i]
-            p.vel = vel_next[i]
+            if not p.fixed:
+                # Gravity
+                forces[i] += self.gravity * p.mass
+                # Viscous Drag (proportional to velocity)
+                forces[i] -= p.vel * self.friction
 
-        # apply positional/constraint corrections (non-force constraints)
+        # Apply constraint forces (Springs)
+        # Create an index map for efficient lookups
+        index_map = {id(p): i for i, p in enumerate(self.particles)}
         for c in self.constraints:
             if isinstance(c, Spring):
-                # springs are force-based and already applied in RK4 -> skip positional correction
-                continue
-            else:
+                i = index_map.get(id(c.p1))
+                j = index_map.get(id(c.p2))
+                if i is None or j is None:
+                    continue
+
+                f_on_j = c.compute_force(c.p1.pos, c.p2.pos, c.p1.vel, c.p2.vel)
+                forces[j] += f_on_j
+                forces[i] -= f_on_j
+
+        # 2. Update velocities using current accelerations
+        for i, p in enumerate(self.particles):
+            if not p.fixed and p.mass != 0:
+                acceleration = forces[i] / p.mass
+                p.vel += acceleration * dt
+
+        # 3. Update positions using new velocities
+        for p in self.particles:
+            if not p.fixed:
+                p.pos += p.vel * dt
+
+        # --- Positional Correction & Collision Resolution ---
+
+        # apply positional/constraint corrections (non-force constraints) over several iterations for stability
+        for _ in range(max(1, int(self.constraint_iterations))):
+            c: TwoPointConstraint
+            for c in self.constraints:
+                if not isinstance(c, Spring):  # Springs are force-based, already handled
+                    try:
+                        c.update(dt)
+                    except Exception:
+                        pass
+
+            # Solve groups (like cloth, rigid bodies)
+            for g in self.groups:
                 try:
-                    c.update()
+                    g.solve(self, dt)
                 except Exception:
                     pass
 
@@ -183,33 +269,58 @@ class World:
         for p in self.particles:
             self._apply_boundary_constraints(p)
 
-        # single-pass collision resolution (positional + impulse), then final clamp
+        # Handle collisions
         self._handle_collisions()
+
+        # Final boundary check after collisions
         for p in self.particles:
             self._apply_boundary_constraints(p)
+
+        # --- Velocity Update (PBD style) ---
+        # Recalculate velocities based on the change from the pre-constraint position.
+        # This is crucial for stability as it syncs velocity with position corrections.
+        # This step effectively replaces the velocity from the force integration step
+        # with one that reflects the outcome of the constraint solves.
+        for i, p in enumerate(self.particles):
+            if not p.fixed and dt > 1e-9:
+                p.vel = (p.pos - pos_before_integration[i]) / dt
+
+        # --- Boundary Restitution (Post-Velocity-Update) ---
+        # After the PBD velocity update, apply restitution for particles at boundaries.
+        for p in self.particles:
+            self._apply_boundary_restitution(p)
 
     def _apply_boundary_constraints(self, particle):
         if particle.fixed:
             return
 
+        # This is a positional correction. It clamps the particle's position
+        # to be within the world boundaries. The velocity-based bounce is
+        # handled separately in _apply_boundary_restitution.
         if particle.pos.x < particle.radius:
             particle.pos.x = particle.radius
-            if particle.vel.x < 0:
-                particle.vel.x = -particle.vel.x * self.bounce
         elif particle.pos.x > self.width - particle.radius:
             particle.pos.x = self.width - particle.radius
-            if particle.vel.x > 0:
-                particle.vel.x = -particle.vel.x * self.bounce
 
         if particle.pos.y < particle.radius:
             particle.pos.y = particle.radius
-            if particle.vel.y < 0:
-                particle.vel.y = -particle.vel.y * self.bounce
         elif particle.pos.y > self.height - particle.radius:
             particle.pos.y = self.height - particle.radius
-            if particle.vel.y > 0:
-                particle.vel.y = -particle.vel.y * self.bounce
 
+    def _apply_boundary_restitution(self, particle):
+        """Applies velocity-based restitution for particles at boundaries."""
+        if particle.fixed:
+            return
+
+        # Horizontal walls
+        if (particle.pos.x <= particle.radius and particle.vel.x < 0) or \
+           (particle.pos.x >= self.width - particle.radius and particle.vel.x > 0):
+            particle.vel.x *= -self.bounce
+
+        # Vertical walls
+        if (particle.pos.y <= particle.radius and particle.vel.y < 0) or \
+           (particle.pos.y >= self.height - particle.radius and particle.vel.y > 0):
+            particle.vel.y *= -self.bounce
     def _rebuild_verlet_list(self, cutoff=None):
         """
         Build a Verlet neighbor list for current particles.
@@ -406,4 +517,31 @@ class World:
                                     resolve_particle_collision(p1, p2,
                                                                restitution=self.restitution,
                                                                percent=0.2, slop=0.01, max_correction=0.5)
-
+                                    
+    def draw_particles(self, screen, selected_particle=None):
+        """Helper to draw all particles in the world."""
+        for p in self.particles:
+            color = constants.RED
+            if p.fixed:
+                color = (125, 125, 125)
+            elif p == selected_particle if selected_particle is not None else False:
+                color = constants.BLUE
+            pygame.draw.circle(screen, color, (int(p.pos.x), int(p.pos.y)), p.radius)
+            if p.fixed:
+                pygame.draw.circle(screen, constants.BLACK, (int(p.pos.x), int(p.pos.y)), p.radius*0.5)
+                
+    def draw_constraints(self, screen):
+        """Helper to draw all constraints in the world."""
+        for c in self.constraints:
+            try:
+                if isinstance(c, Spring):
+                    c.draw(screen, color=(0, 150, 0), secondary_color=(0, 255, 0))
+                else:
+                    c.draw(screen, color=(0, 0, 0))
+            except Exception:
+                pass
+        for g in self.groups:
+            try:
+                g.draw(screen, color=(150, 0, 150))
+            except Exception:
+                pass

@@ -1,7 +1,9 @@
 
 import json
-from .core import Particle, Vec2
-from .constraints import DistanceConstraint
+
+from .Particle import Particle
+from .Vec2 import Vec2
+from .DistanceConstraint import DistanceConstraint
 from .spring import Spring
 from .world import World
 

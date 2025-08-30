@@ -1,6 +1,8 @@
-from .core import Particle, Vec2
+from .Particle import Particle
+from .Vec2 import Vec2
 import math
 import random
+import pygame
 
 class Emitter:
     def __init__(self, pos, direction, spread=15, velocity=200, rate=0.1, 
@@ -42,3 +44,11 @@ class Emitter:
         )
         
         world.add_particle(particle)
+        
+    def draw(self, screen):
+        try:
+            pygame.draw.circle(screen, (255, 0, 0), (int(self.pos.x), int(self.pos.y)), 5)
+            end_pos = self.pos + self.direction * 20
+            pygame.draw.line(screen, (255, 0, 0), (int(self.pos.x), int(self.pos.y)), (int(end_pos.x), int(end_pos.y)), 2)
+        except Exception:
+            pass

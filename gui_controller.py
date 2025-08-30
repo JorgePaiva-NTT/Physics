@@ -47,7 +47,7 @@ def run_gui(shared):
         spring_length_cb, spring_stiffness_cb, spring_damping_cb = _make_callbacks(shared)
 
     # Main controls window (give it a tag)
-    with dpg.window(label="Physics Controls", tag="controls_window", width=380, height=260):
+    with dpg.window(label="Physics Controls", tag="controls_window", width=380, height=320):
         dpg.add_text("Collision tuning")
         dpg.add_spacer()
         dpg.add_text("Verlet rebuild frequency (frames)")
@@ -59,6 +59,9 @@ def run_gui(shared):
         dpg.add_text("Collision iterations")
         dpg.add_slider_int(label="Iterations", tag="iters_slider", default_value=int(shared.get('collision_iterations', 4)),
                            min_value=1, max_value=10, callback=iters_cb)
+        dpg.add_text("Constraint iterations")
+        dpg.add_slider_int(label="Iterations", tag="constraint_iters_slider", default_value=int(shared.get('constraint_iterations', 2)),
+                           min_value=1, max_value=50, callback=lambda s, a, u: shared.update({'constraint_iterations': int(a)}))
         dpg.add_separator()
         dpg.add_button(label="Pause / Toggle", callback=lambda s,a,u: pause_cb())
         dpg.group(horizontal=True)
@@ -98,7 +101,7 @@ def run_gui(shared):
         while not shared.get('__exit__', False) and dpg.is_dearpygui_running():
             # update status from shared
             try:
-                status = f"freq={shared.get('verlet_rebuild_freq', 5)}, skin={float(shared.get('verlet_skin', 0.0)):.2f}, iters={shared.get('collision_iterations', 4)}"
+                status = f"freq={shared.get('verlet_rebuild_freq', 5)}, skin={float(shared.get('verlet_skin', 0.0)):.2f}, coll_iters={shared.get('collision_iterations', 4)}, const_iters={shared.get('constraint_iterations', 2)}"
             except Exception:
                 status = "status error"
             dpg.set_value("status_text", status)
